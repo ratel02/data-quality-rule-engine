@@ -9,7 +9,10 @@ import lombok.Setter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
 
+import static com.cdq.dataquality.ruleengine.RuleEngine.MISSING_ID_ERROR;
 import static java.lang.String.format;
 import static java.util.Objects.nonNull;
 
@@ -27,11 +30,26 @@ public class SimpleRulesProcessor implements RulesProcessor {
      * @param rules  all rules that apply
      * @return rule results
      */
+    @Override
     public List<RuleResult> processRules(final Map<String, Object> record, final List<Rule> rules) {
         // find subset of rules to be executed based on filters, execute each rule and return results
         return rules.stream()
                 .map(rule -> this.processRule(record, rule))
                 .toList();
+    }
+
+    /**
+     * Processes rules as stream, without collecting all results together.
+     *
+     * @param record             the schema-less record
+     * @param rules              all rules that apply
+     * @param ruleResultConsumer a function that accepts result as it's produced
+     */
+    @Override
+    public void processRulesStream(final Map<String, Object> record, final List<Rule> rules, final Consumer<RuleResult> ruleResultConsumer) {
+        for (final Rule rule : rules) {
+            ruleResultConsumer.accept(this.processRule(record, rule));
+        }
     }
 
     /**
@@ -45,6 +63,9 @@ public class SimpleRulesProcessor implements RulesProcessor {
         // create provenance map to capture execution details and use builder pattern to start building the result
         final Map<String, String> provenance = new HashMap<>();
         final RuleResultBuilder resultBuilder = RuleResult.builder()
+                .recordId(Optional.ofNullable(record.get("id"))
+                        .map(String::valueOf)
+                        .orElse(MISSING_ID_ERROR))
                 .ruleId(rule.getId())
                 .severity(rule.getSeverity())
                 .provenance(provenance);

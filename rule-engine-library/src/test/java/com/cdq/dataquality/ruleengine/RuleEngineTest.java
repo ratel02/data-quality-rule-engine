@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.cdq.dataquality.ruleengine.rule.Decision.INVALID;
@@ -23,14 +24,11 @@ import static com.cdq.dataquality.ruleengine.rule.Severity.ERROR;
 import static com.cdq.dataquality.ruleengine.rule.Severity.INFO;
 import static com.cdq.dataquality.ruleengine.rule.Status.DRAFT;
 import static com.cdq.dataquality.ruleengine.rule.Status.RELEASED;
-import static java.util.Collections.emptyList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -47,6 +45,45 @@ class RuleEngineTest {
         rulesProcessor = mock(RulesProcessor.class);
         rulesCatalog = mock(RulesCatalog.class);
         engine = new RuleEngine(rulesProcessor, rulesCatalog);
+    }
+
+    /**
+     * All tests related to select rules logic.
+     */
+    @Nested
+    class SelectRulesTest {
+
+        @Test
+        void selectsAllRulesWhenNoFiltersAreSupplied() {
+            // given
+            Rule rule = mockRule(RELEASED, "DE", List.of("quality"));
+            Rule rule2 = mockRule(RELEASED, "FR", null);
+            when(rulesCatalog.getRules()).thenReturn(List.of(rule, rule2));
+
+            // when
+            List<Rule> selectedRules = engine.selectRules(null, null);
+
+            // then
+            assertEquals(2, selectedRules.size());
+        }
+
+        @Test
+        void filtersRulesByStatusAndCategory() {
+            // given
+            Rule matching = mockRule(RELEASED, "DE", List.of("quality"));
+            Rule wrongStatus = mockRule(DRAFT, "DE", List.of("quality"));
+            Rule wrongCategory = mockRule(RELEASED, "DE", List.of("other"));
+            Rule noCategory = mockRule(RELEASED, "DE", null);
+            when(rulesCatalog.getRules()).thenReturn(List.of(matching, wrongStatus, wrongCategory, noCategory));
+
+            // when
+            List<Rule> selectedRules = engine.selectRules(RELEASED, "quality");
+
+            // then
+            assertEquals(1, selectedRules.size());
+            assertEquals(matching, selectedRules.getFirst());
+        }
+
     }
 
     /**
@@ -119,7 +156,7 @@ class RuleEngineTest {
     class ProcessBatchTestRecordResults {
 
         @Test
-        void processesAllRulesWhenNoFiltersAreSupplied() {
+        void processesAllRules() {
             // given
             Rule rule = mockRule(RELEASED, "DE", List.of("quality"));
             RuleResult result = mockRuleResult(true, VALID, ERROR);
@@ -143,49 +180,6 @@ class RuleEngineTest {
                 assertEquals(0, recordResult.getRuleResultsFailure().size());
             }
             verify(rulesProcessor, times(2)).processRules(anyMap(), eq(List.of(rule)));
-        }
-
-        @Test
-        void filtersRulesByStatusAndCategory() {
-            // given
-            Rule matching = mockRule(RELEASED, "DE", List.of("quality"));
-            Rule wrongStatus = mockRule(DRAFT, "DE", List.of("quality"));
-            Rule wrongCategory = mockRule(RELEASED, "DE", List.of("other"));
-            when(rulesCatalog.getRules()).thenReturn(List.of(matching, wrongStatus, wrongCategory));
-            when(rulesProcessor.processRules(anyMap(), eq(List.of(matching)))).thenReturn(List.of());
-            List<Map<String, Object>> records = List.of(Map.of(
-                    "id", "1",
-                    "country", "DE"
-            ));
-
-            // when
-            List<RecordResult> results = engine.processBatch(records, RELEASED, "quality")
-                    .getRecordResults();
-
-            // then
-            assertEquals(1, results.size());
-            assertTrue(results.getFirst().getRuleResultsSuccess().isEmpty());
-            verify(rulesProcessor).processRules(argThat(m -> "1".equals(m.get("id"))), eq(List.of(matching)));
-            verify(rulesProcessor, never()).processRules(anyMap(), eq(List.of(wrongStatus)));
-            verify(rulesProcessor, never()).processRules(anyMap(), eq(List.of(wrongCategory)));
-        }
-
-        @Test
-        void excludesRulesWithNullCategoriesWhenCategoryFilterIsSet() {
-            // given
-            Rule rule = mockRule(Status.values()[0], "DE", null);
-            when(rulesCatalog.getRules()).thenReturn(List.of(rule));
-            when(rulesProcessor.processRules(anyMap(), eq(emptyList()))).thenReturn(emptyList());
-            List<Map<String, Object>> records = List.of(Map.of("id", "1"));
-
-            // when
-            List<RecordResult> results = engine.processBatch(records, null, "quality")
-                    .getRecordResults();
-
-            // then
-            assertEquals(1, results.size());
-            assertTrue(results.getFirst().getRuleResultsSuccess().isEmpty());
-            verify(rulesProcessor).processRules(anyMap(), eq(emptyList()));
         }
 
         @Test
@@ -244,6 +238,31 @@ class RuleEngineTest {
             assertEquals(0, results.getFirst().getRuleResultsFailure().size());
             assertEquals(0, results.getLast().getRuleResultsSuccess().size());
             assertEquals(1, results.getLast().getRuleResultsFailure().size());
+        }
+
+    }
+
+    /**
+     * ll tests related to single record stream.
+     */
+    @Nested
+    class ProcessSingleRecordStream {
+
+        @Test
+        void invokesProcessorForRecord() {
+            // given
+            Rule rule = mockRule(RELEASED, "DE", List.of("quality"));
+            Rule rule2 = mockRule(RELEASED, "FR", null);
+            List<Rule> rules = List.of(rule, rule2);
+            Map<String, Object> record = Map.of("id", "1");
+            Consumer<RuleResult> resultConsumer = result -> {
+            };
+
+            // when
+            engine.processSingleRecordStream(record, rules, resultConsumer);
+
+            // then
+            verify(rulesProcessor).processRulesStream(eq(record), eq(rules), eq(resultConsumer));
         }
 
     }

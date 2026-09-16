@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static com.cdq.dataquality.ruleengine.rule.Status.RELEASED;
 import static java.util.Collections.emptyList;
@@ -34,32 +35,46 @@ import static java.util.stream.Collectors.groupingBy;
 @RequiredArgsConstructor
 public class RuleEngine {
 
-    private static final String MISSING_ID_ERROR = "Record ID not found!";
+    public static final String MISSING_ID_ERROR = "Record ID not found!";
 
     private final RulesProcessor rulesProcessor;
     private final RulesCatalog rulesCatalog;
 
     /**
-     * Processes a batch of records. Batch split is to be done by client, depending on technology used.
+     * Selects rules by given filters.
      *
-     * @param records              records batch
-     * @param filterByStatus       optional filter by status
-     * @param filterByCategory     optional filter by category
-     * @return batch records processing result
+     * @param filterByStatus   status filter (currently unused as requested by functional requirement)
+     * @param filterByCategory category filter
+     * @return rules that match criteria
      */
-    public BatchResult processBatch(final List<Map<String, Object>> records,
-                                    final Status filterByStatus,
-                                    final String filterByCategory) {
+    public List<Rule> selectRules(final Status filterByStatus, final String filterByCategory) {
         // get rules, apply filters
-        final List<Rule> rules = this.rulesCatalog.getRules()
+        return this.rulesCatalog.getRules()
                 .stream()
                 // intentionally commented out and replaced with RELEASED filter as per F6.5 functional requirement
                 // .filter(rule -> isNull(filterByStatus) || filterByStatus == rule.getStatus())
                 .filter(rule -> rule.getStatus() == RELEASED)
                 .filter(rule -> isNull(filterByCategory) || (nonNull(rule.getCategories()) && rule.getCategories().contains(filterByCategory)))
                 .toList();
+    }
 
-        // process batch of records
+    /**
+     * Processes a batch of records.
+     * It's a convenience/materialised API intended for bounded batches.
+     * For a one-by-one streaming see {@link this#processSingleRecord(Map, List)}
+     *
+     * @param records          records batch
+     * @param filterByStatus   optional filter by status
+     * @param filterByCategory optional filter by category
+     * @return batch records processing result
+     */
+    public BatchResult processBatch(final List<Map<String, Object>> records,
+                                    final Status filterByStatus,
+                                    final String filterByCategory) {
+        // select rules
+        final List<Rule> rules = this.selectRules(filterByStatus, filterByCategory);
+
+        // process batch of records (materialised)
         final List<RecordResult> results = records.stream()
                 .map(record -> this.processSingleRecord(record, rules))
                 .toList();
@@ -114,6 +129,23 @@ public class RuleEngine {
                 resultsBySuccess.getOrDefault(true, emptyList()),
                 resultsBySuccess.getOrDefault(false, emptyList())
         );
+    }
+
+    /**
+     * Processes single record in using {@link RulesProcessor#processRulesStream(Map, List, Consumer)} method.
+     * This does not accumulate any data in memory (event batch) and only one record is processed at a time.
+     * Also, every rule result is emitted straight away using ruleResultConsumer param.
+     *
+     * @param record             record to be processed
+     * @param rules              all rules that apply
+     * @param ruleResultConsumer a consumer that accepts rule processed event
+     *
+     */
+    public void processSingleRecordStream(final Map<String, Object> record,
+                                          final List<Rule> rules,
+                                          final Consumer<RuleResult> ruleResultConsumer) {
+        // process rules
+        this.rulesProcessor.processRulesStream(record, rules, ruleResultConsumer);
     }
 
 }

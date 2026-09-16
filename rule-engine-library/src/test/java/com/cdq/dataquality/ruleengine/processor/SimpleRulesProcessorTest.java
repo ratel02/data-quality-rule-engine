@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -47,6 +48,7 @@ class SimpleRulesProcessorTest {
             assertEquals(List.of(VALID, VALID), extract(results, RuleResult::getDecision));
             assertEquals(List.of(ERROR, ERROR), extract(results, RuleResult::getSeverity));
             assertEquals(List.of("r1", "r2"), extract(results, RuleResult::getRuleId));
+            assertEquals(List.of("1", "1"), extract(results, RuleResult::getRecordId));
         }
 
         @Test
@@ -67,6 +69,7 @@ class SimpleRulesProcessorTest {
             assertTrue(result.isSuccess());
             assertEquals("blocked", result.getOutcome());
             assertEquals(INVALID, result.getDecision());
+            assertEquals("1", result.getRecordId());
         }
 
         @Test
@@ -87,6 +90,7 @@ class SimpleRulesProcessorTest {
             assertTrue(result.isSuccess());
             assertEquals("unknown-outcome", result.getOutcome());
             assertEquals(NOT_APPLICABLE, result.getDecision());
+            assertEquals("1", result.getRecordId());
         }
 
         @Test
@@ -106,6 +110,7 @@ class SimpleRulesProcessorTest {
             assertTrue(result.isSuccess());
             assertNull(null, result.getOutcome());
             assertEquals(NOT_APPLICABLE, result.getDecision());
+            assertEquals("1", result.getRecordId());
         }
 
         @Test
@@ -124,6 +129,7 @@ class SimpleRulesProcessorTest {
             // then
             assertFalse(result.isSuccess());
             assertEquals("r1", result.getRuleId());
+            assertEquals("1", result.getRecordId());
             assertEquals(severity, result.getSeverity());
             assertNull(result.getOutcome());
             assertNull(result.getDecision());
@@ -133,6 +139,43 @@ class SimpleRulesProcessorTest {
         @Test
         void returnsEmptyListWhenThereAreNoRules() {
             assertTrue(processor.processRules(Map.of("id", "1"), List.of()).isEmpty());
+        }
+
+    }
+
+    @Nested
+    class TestProcessRulesStream {
+
+        @Test
+        void emitsOneSuccessfulResultPerRule() {
+            // given
+            Rule rule1 = mockRule("r1", ERROR, "ok", VALID);
+            Rule rule2 = mockRule("r2", ERROR, "bad", VALID);
+            final List<RuleResult> results = new ArrayList<>();
+
+            // when
+            processor.processRulesStream(Map.of("id", "1"), List.of(rule1, rule2), results::add);
+
+            // then
+            assertEquals(2, results.size());
+            assertEquals(List.of(true, true), extract(results, RuleResult::isSuccess));
+            assertEquals(List.of("ok", "bad"), extract(results, RuleResult::getOutcome));
+            assertEquals(List.of(VALID, VALID), extract(results, RuleResult::getDecision));
+            assertEquals(List.of(ERROR, ERROR), extract(results, RuleResult::getSeverity));
+            assertEquals(List.of("r1", "r2"), extract(results, RuleResult::getRuleId));
+            assertEquals(List.of("1", "1"), extract(results, RuleResult::getRecordId));
+        }
+
+        @Test
+        void notingIsEmittedWhenThereAreNoRules() {
+            // given
+            final List<RuleResult> results = new ArrayList<>();
+
+            // when
+            processor.processRulesStream(Map.of("id", "1"), List.of(), results::add);
+
+            // then
+            assertTrue(results.isEmpty());
         }
 
     }

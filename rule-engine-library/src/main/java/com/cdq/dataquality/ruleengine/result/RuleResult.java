@@ -13,6 +13,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class RuleResult {
 
+    private final String recordId;
     private final String ruleId;
     private final String outcome;
     private final Decision decision;

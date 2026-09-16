@@ -93,6 +93,7 @@ public enum Decision {
 ```json
 {
   "ruleId": "rule1",
+  "recordId": "r1",
   "outcome": "blocked",
   "decision": "VALID",
   "severity": "WARNING",
@@ -175,6 +176,7 @@ public enum Decision {
   - client decides batch size, rule engine accepts the batch, to enable scale (**F5**)
   - since it’s a library, it is detached from any technology — can be used with Spring WebFlux, RxJava, Parallel Collectors (Virtual Threads)
   - builds the summary of batch processing including number of errors and successes (**F3, F4**)
+- **Rule Engine** exposes operation to stream records and emit **Rule Results** as soon as they are produced (**F5**)
 - **Rules Processor** is processing a single record against all rules, allowing fault-tolerant processing:
   - when a rule produces an outcome, uses declarative mapping to derive a decision (**F1, F2**)
   - creates a rule result that carries the decision, severity and provenance (**F1**)
@@ -227,6 +229,11 @@ The filter actual implementation would look like:
 ```java
 .filter(rule -> isNull(filterByStatus) || filterByStatus == rule.getStatus())
 ```
+
+### 6.7 Rule Result 
+
+Rule result contains `recordId` which is also returned within *RecordResult*, the reason for it is to support stream endpoint whereby only `RuleResult` is being emitted. 
+
 
 # 7. Ideas and Future Improvements
 
